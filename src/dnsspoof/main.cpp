@@ -103,7 +103,7 @@ int main() {
     Logger::debug("Fount Interfaces. Now Setting Up NetworkMonitor");
 
     monitor = NetworkMonitor::getInstance();
-    monitor->setFilter("udp dst port 53 and ip src 192.168.0.100");
+    monitor->setFilter("ip src 192.168.0.100 and dst port 53");
 
     Logger::debug("Filter Set. Now Listening");
 

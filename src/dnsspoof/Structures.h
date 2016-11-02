@@ -12,7 +12,7 @@
 
 /* Ethernet addresses are 6 bytes */
 #define ETHER_ADDR_LEN	6
-#define SIZE_ETHERNET 14
+#define SIZE_ETHERNET 16
 
 /* Ethernet header */
 struct sniff_ethernet {
@@ -138,8 +138,8 @@ struct RES_RECORD
 //Structure of a Query
 typedef struct
 {
-    unsigned char *name;
-    struct QUESTION *ques;
+    string name;
+    struct QUESTION * ques;
 } QUERY;
 
 #endif //INC_8505_A4_DNSSPOOF_STRUCTURES_H
