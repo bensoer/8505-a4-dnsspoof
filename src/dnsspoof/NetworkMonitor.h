@@ -19,6 +19,9 @@ private:
     string * data = nullptr;
     string filter = "udp dst port 100";
 
+    int rawSocket;
+
+    unsigned short csum(unsigned short *ptr, int nbytes);
 
     static void packetCallback(u_char *ptrnull, const struct pcap_pkthdr *pkt_info, const u_char *packet);
 

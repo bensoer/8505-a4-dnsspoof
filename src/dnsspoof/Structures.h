@@ -124,6 +124,7 @@ struct R_DATA
     unsigned short _class;
     unsigned int ttl;
     unsigned short data_len;
+    in_addr_t address;
 };
 #pragma pack(pop)
 
@@ -139,7 +140,16 @@ struct RES_RECORD
 typedef struct
 {
     string name;
+    string rawName;
     struct QUESTION * ques;
 } QUERY;
+
+
+#define T_A 1 //Ipv4 address
+#define T_NS 2 //Nameserver
+#define T_CNAME 5 // canonical name
+#define T_SOA 6 /* start of authority zone */
+#define T_PTR 12 /* domain name pointer */
+#define T_MX 15 //Mail server
 
 #endif //INC_8505_A4_DNSSPOOF_STRUCTURES_H

