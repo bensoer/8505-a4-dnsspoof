@@ -2,7 +2,7 @@
 A DNS Spoofing Program. Cuz rerouting your frenemies was a passtime of dreams
 
 #Setup
-#Prerequisites
+##Prerequisites
 In order for this application to work a number of tools need to be available on your system. You will need
 Python3, g++ and cmake. In addition to these tools, you will need a number of uncommon libraries installed on
 your python and g++ system.
@@ -11,7 +11,7 @@ your python and g++ system.
 * libpcap library of some kind
 
 
-#Installation
+##Installation
 Execute the following from the project root
 
 1. `cd` to the `src` folder
