@@ -13,12 +13,14 @@ your python and g++ system.
 
 #Installation
 Execute the following from the project root
+
 1. `cd` to the `src` folder
 2. Execute `cmake .`
 3. Execute `make`
 4. The compiled DNS Spoofer will be in the the project root under the `bin` folder
 5. The Arp Poison program is available from the project root under `src/arppoison/arppoison.py` and requires
 no pre-compilation
+
 #Usage
 Startup each program with no parameters to view a full breakdown of all command line options. You can start each program
 with the following commands:
