@@ -76,15 +76,37 @@ struct sniff_tcp {
 #define T_PTR 12 /* domain name pointer */
 #define T_MX 15 //Mail server
 
+/*
 typedef struct    //needed for checksum calculation - see notes
 {
     unsigned int source_address;
     unsigned int dest_address;
     unsigned char placeholder;
     unsigned char protocol;
-    unsigned short tcp_length;
+    unsigned short udp_length;
     struct udphdr udp;
 }pseudo_header;
+*/
+
+/*typedef struct
+{
+    u_int32_t source_address;
+    u_int32_t dest_address;
+    u_int8_t placeholder;
+    u_int8_t protocol;
+    u_int16_t udp_length;
+    struct udphdr udp;
+}pseudo_header;
+*/
+
+struct pseudo_header
+{
+    u_int32_t source_address;
+    u_int32_t dest_address;
+    u_int8_t placeholder;
+    u_int8_t protocol;
+    u_int16_t udp_length;
+};
 
 //DNS header structure
 struct DNS_HEADER

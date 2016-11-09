@@ -16,6 +16,7 @@
 #include <arpa/inet.h>
 #include <string>
 #include <stdlib.h>
+#include <malloc.h>
 
 /**
  * instance is the instance stored in the network monitor of the netowrk monirot. This is used to enforce a singleton
@@ -74,8 +75,6 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
 
     Logger::debug("Packet Found. Now Parsing");
 
-
-
     //struct sniff_ethernet * ethernet = (struct sniff_ethernet*)(packet);
     struct iphdr * ip = (struct iphdr*)(packet + SIZE_ETHERNET);
     printf("Total Length At Recv: %d\n", ntohs(ip->tot_len));
@@ -98,8 +97,11 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     ip->saddr = ip->daddr;
     //ip->saddr = inet_addr("192.168.10.10");
     ip->daddr = tmp;
-    ip->ttl = 255;
-    ip->id = htonl((rand() % 11000) + 29000);
+    ip->ttl = 64;
+
+    printf("IP ID: %d\n", ntohs(ip->id));
+    ip->id = htons((rand() % 11000) + 29000);
+    ip->frag_off = 0;
 
     //u_int size_ip = IP_HL(ip) * 4;
     //u_int size_ip = sizeof(*ip) + 2;
@@ -109,10 +111,7 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     printf("size_ip2: %d\n", size_ip2);
     printf("size_ip: %d\n", size_ip);
 
-
-
     struct udphdr * udp = (struct udphdr *)(packet + SIZE_ETHERNET + size_ip);
-
 
     //switch the ports now to save us work later
     int oldDest = ntohs(udp->uh_dport);
@@ -124,9 +123,6 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     udp->source = htons(oldDest);
 
 
-
-    // ^ COULD BE BUGS IN HERE ?
-
     //create dest address struct for sendto
     struct sockaddr_in sin;
     pseudo_header psh;
@@ -135,19 +131,32 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     sin.sin_port = htons(oldSource);
     sin.sin_addr.s_addr = inet_addr(oldIPSource);
 
-
-
-
-    //u_char * payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + 8);
     //grab the DNS payload out
     struct DNS_HEADER *dns = (struct DNS_HEADER *) (packet + SIZE_ETHERNET + size_ip + sizeof(*udp));
     char *query = (char *)(packet + SIZE_ETHERNET + size_ip + sizeof(*udp) + sizeof(struct DNS_HEADER));
 
     //change dns question to response
-    dns->qr = 1;
-    dns->aa = 1;
-    dns->tc = 0;
+    //dns->qr = 1; //question / response
+    //dns->aa = 1; // authoritative
+    //dns->tc = 0; //truncated
     dns->ans_count = dns->q_count; //were gonna answer as many questions as there are
+
+    //dns->rd = 0;
+    dns->tc = 0;
+    dns->aa = 1;
+    dns->opcode = 0;
+    dns->qr = 1;
+    dns->rcode = 0;
+
+    //dns->cd = 1; //non-authenticated data accepted = 1
+    if(dns->cd = 0){
+        dns->ad = 0;
+    }else{
+        dns->ad = 1;
+    }
+
+    dns->z = 0;
+    dns->ra = 0;
 
 
     cout << "---------------------------------------------" << endl;
@@ -261,11 +270,6 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     int questionListContentSize = 0;
     for(int i = 0; i < ntohs(dns->q_count); ++i){
 
-        //copy in the query information
-        //memcpy(responsePtr, questionsList[i].rawName.c_str(), questionsList[i].rawName.size());
-        //responsePtr += questionsList[i].rawName.size();
-        //questionListContentSize += questionsList[i].rawName.size();
-
         short hex = 0x0CC0;
         memcpy(responsePtr, &hex, 2);
         responsePtr += 2;
@@ -291,28 +295,58 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     cout << "Original IP Length: " << ntohs(ip->tot_len) << endl;
     cout << "Response IP Length: " << ntohs(rip->tot_len) << endl;
 
+    rip->check = 0;
+    rip->check = NetworkMonitor::instance->csum((unsigned short *) responsePacket, sizeof(struct iphdr));
+
     //recalc udp length
     struct udphdr * rudp = (struct udphdr *)(responsePacket + size_ip);
-    rudp->len = htons( ntohs(udp->len) + (( ntohs(dns->q_count) * sizeof(struct R_DATA)) + questionListContentSize));
+    unsigned short newLength = ntohs(udp->len) + ( ( ntohs(dns->q_count) * sizeof(struct R_DATA) ) + questionListContentSize);
+    rudp->len = htons( ntohs(udp->len) + ( ( ntohs(dns->q_count) * sizeof(struct R_DATA) ) + questionListContentSize) );
     cout << "Original UDP Length: " << ntohs(udp->len) << endl;
     cout << "Response UDP Length: " << ntohs(rudp->len) << endl;
 
 
+    rudp->check = 0;
+    rudp->uh_sum = 0;
+
     //calculate new checksum for pseudoheader
     psh.dest_address = sin.sin_addr.s_addr;
     psh.source_address = inet_addr(oldIPDestination);
+
+    //psh.dest_address = rip->daddr;
+    //psh.source_address = rip->saddr;
     psh.placeholder = 0;
     psh.protocol = IPPROTO_UDP;
+    psh.udp_length = htons(newLength);
 
-    memcpy(&psh.udp, rudp, sizeof(struct udphdr));
-    rudp->check = NetworkMonitor::instance->csum((unsigned short *) & rudp, sizeof(pseudo_header));
+    int psize = sizeof(struct pseudo_header) + newLength;
+    char * pseudogram = (char *)malloc(psize);
+
+
+
+    memcpy(pseudogram, (char*) &psh, sizeof(struct pseudo_header));
+    memcpy(pseudogram + sizeof(struct pseudo_header), rudp, newLength);
+
+    rudp->check = NetworkMonitor::instance->csum((unsigned short *) pseudogram, psize);
+    //memcpy(&psh.udp, rudp, sizeof(struct udphdr));
+    //rudp->check = NetworkMonitor::instance->csum((unsigned short *) pseudogram, psize);
+    //psh.udp.check = 0;
+    //psh.udp.uh_sum = 0;
+    //rudp->check = NetworkMonitor::instance->csum((unsigned short *) &psh, sizeof(pseudo_header));
+    //rudp->uh_sum = NetworkMonitor::instance->csum((unsigned short *) &psh, sizeof(pseudo_header));
+
+
+    printf("IP Checksum Hex: %x\n", rip->check);
+    printf("UDP Checksum Hex: %x\n", rudp->check);
+    printf("UDP Checksum Hex: %x\n", rudp->uh_sum);
 
     //time to send this garbage
-    if(sendto(NetworkMonitor::instance->rawSocket, responsePacket, ntohs(rip->tot_len), 0, (struct sockaddr *) &sin, sizeof(sin)) < 0){
+    ssize_t result = sendto(NetworkMonitor::instance->rawSocket, responsePacket, ntohs(rip->tot_len), 0, (struct sockaddr *) &sin, sizeof(sin));
+    if(result < 0){
         perror("sendto");
     }
 
-
+    return;
     //NetworkMonitor::instance->killListening();
 
 }
@@ -405,4 +439,52 @@ unsigned short NetworkMonitor::csum (unsigned short *ptr,int nbytes)
     answer=(short)~sum;
 
     return(answer);
+}
+
+typedef unsigned short u16;
+typedef unsigned long u32;
+
+unsigned short NetworkMonitor::udp_sum_calc(unsigned short len_udp, unsigned short src_addr[],unsigned short dest_addr[], bool padding, unsigned short buff[])
+{
+    unsigned short prot_udp=17;
+    unsigned short padd=0;
+    unsigned short word16;
+    unsigned long sum;
+
+    // Find out if the length of data is even or odd number. If odd,
+    // add a padding byte = 0 at the end of packet
+    if (padding&1==1){
+        padd=1;
+        buff[len_udp]=0;
+    }
+
+    //initialize sum to zero
+    sum=0;
+
+    // make 16 bit words out of every two adjacent 8 bit words and
+    // calculate the sum of all 16 vit words
+    for (unsigned int i=0;i<len_udp+padd;i=i+2){
+        word16 =((buff[i]<<8)&0xFF00)+(buff[i+1]&0xFF);
+        sum = sum + (unsigned long)word16;
+    }
+    // add the UDP pseudo header which contains the IP source and destinationn addresses
+    for (unsigned int i=0;i<4;i=i+2){
+        word16 =((src_addr[i]<<8)&0xFF00)+(src_addr[i+1]&0xFF);
+        sum=sum+word16;
+    }
+    for (unsigned int i=0;i<4;i=i+2){
+        word16 =((dest_addr[i]<<8)&0xFF00)+(dest_addr[i+1]&0xFF);
+        sum=sum+word16;
+    }
+    // the protocol number and the length of the UDP packet
+    sum = sum + prot_udp + len_udp;
+
+    // keep only the last 16 bits of the 32 bit calculated sum and add the carries
+    while (sum>>16)
+        sum = (sum & 0xFFFF)+(sum >> 16);
+
+    // Take the one's complement of sum
+    sum = ~sum;
+
+    return ((unsigned short) sum);
 }
