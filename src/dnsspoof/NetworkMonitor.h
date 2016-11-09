@@ -17,13 +17,14 @@ private:
     static NetworkMonitor * instance;
     pcap_t * currentFD = nullptr;
     string * data = nullptr;
+
     string filter = "udp dst port 100";
+    string domain = "";
+    string spoofIP = "";
 
     int rawSocket;
 
     unsigned short csum(unsigned short *ptr, int nbytes);
-
-    unsigned short udp_sum_calc(unsigned short len_udp, unsigned short src_addr[],unsigned short dest_addr[], bool padding, unsigned short buff[]);
 
     static void packetCallback(u_char *ptrnull, const struct pcap_pkthdr *pkt_info, const u_char *packet);
 
@@ -35,6 +36,9 @@ public:
     void killListening();
 
     void setFilter(string filter);
+
+    void setDomain(string domain);
+    void setSpoofIP(string spoofIP);
 
 
 };
