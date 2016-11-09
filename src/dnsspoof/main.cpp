@@ -129,24 +129,22 @@ int main(int argc, char * argv[]) {
         return 1;
     }
 
-    Logger::debug("Registering Signal");
+    Logger::println("Main - Registering Signal");
 
     //find listening items
     if(getInterface() == false){
         Logger::error("Main - There was An Error Reading The Interfaces");
         return 1;
     }else{
-        Logger::debug("Finding Interface Successful");
+        Logger::debug("Main - Finding Interface Successful");
     }
 
-    Logger::debug("Fount Interfaces. Now Setting Up NetworkMonitor");
-
+    Logger::debug("Main - Found Interfaces. Now Setting Up NetworkMonitor");
     monitor = NetworkMonitor::getInstance();
     monitor->setFilter("ip src " + victimIP + " and dst port 53");
     monitor->setSpoofIP(spoofIP);
     monitor->setDomain(domain);
-
-    Logger::debug("Filter Set. Now Listening");
+    Logger::println("Main - Filter,Domain & SpoofIP Set. Now Listening");
 
     while(keepListening){
 
@@ -156,14 +154,10 @@ int main(int argc, char * argv[]) {
         if(keepListening == false){
             break;
         }
-
-        //anything else needing to be done ?
-
     }
 
-    Logger::debug("Loop Killed. Terminating");
-
-    Logger::debug("Freeing All ResourceS");
+    Logger::println("Main - Loop Killed. Terminating");
+    Logger::debug("Main - Freeing All Resources");
     pcap_freealldevs(allInterfaces);
     allInterfaces = nullptr;
     listeningInterface = nullptr;
