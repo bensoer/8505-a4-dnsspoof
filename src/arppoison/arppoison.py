@@ -22,6 +22,8 @@ def parseArg(args, key):
     for index, item in enumerate(args):
         if item == key:
             valueIndex = index + 1
+            if valueIndex >= len(args):
+                return ""
             return args[valueIndex]
     return ""
 

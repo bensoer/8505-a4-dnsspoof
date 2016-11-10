@@ -30,6 +30,9 @@ public:
             if(preTag.compare(argArray[i])==0)
             {
                 int t = i +1;
+                if(t >= length){
+                    return "-1";
+                }
                 return argArray[t];
             }
         }
@@ -59,7 +62,9 @@ public:
             if(preTag.compare(argArray[i])==0)
             {
                 int t = i+1;
-
+                if(t >= length){
+                    return -1;
+                }
                 string number = (argArray[t]);
 
                 int num;
